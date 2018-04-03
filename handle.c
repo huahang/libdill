@@ -90,7 +90,6 @@ int hmake(struct hvfs *vfs) {
     /* Return first handle from the list of unused handles. */
     int h = ctx->unused;
     ctx->unused = ctx->handles[h].next;
-    vfs->refcount = 1;
     ctx->handles[h].vfs = vfs;
     ctx->handles[h].next = -2;
     ctx->handles[h].type = NULL;
@@ -98,13 +97,16 @@ int hmake(struct hvfs *vfs) {
     return h;
 }
 
-int hdup(int h) {
+int hown(int h) {
     struct dill_ctx_handle *ctx = &dill_getctx->handle;
     CHECKHANDLE(h, -1);
-    int refcount = hndl->vfs->refcount;
+    /* Create a new handle for the same object. */
     int res = hmake(hndl->vfs);
     if(dill_slow(res < 0)) return -1;
-    ctx->handles[res].vfs->refcount = refcount + 1;
+    /* Return a handle to the shared pool. */
+    hndl->ptr = NULL;
+    hndl->next = ctx->unused;
+    ctx->unused = h;
     return res;
 }
 
@@ -128,12 +130,6 @@ void *hquery(int h, const void *type) {
 int hclose(int h) {
     struct dill_ctx_handle *ctx = &dill_getctx->handle;
     CHECKHANDLE(h, -1);
-    /* If there are multiple duplicates of this handle, just remove one
-       reference. */
-    if(hndl->vfs->refcount > 1) {
-        --hndl->vfs->refcount;
-        return 0;
-    }
     /* This will guarantee that blocking functions cannot be called anywhere
        inside the context of the close. */
     int old = dill_no_blocking(1);
